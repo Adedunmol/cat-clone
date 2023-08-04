@@ -1,5 +1,5 @@
 use clap::Parser;
-use std::{path, fs::File, error::Error, io::{self, Write, BufReader, prelude::*, BufWriter, Stdout}};
+use std::{path, process, fs::File, error::Error, io::{self, BufReader, prelude::*, BufWriter, Stdout}};
 use anyhow::{Context, Result};
 
 /// Display the content of a file
@@ -10,15 +10,15 @@ pub struct Cli {
 }
 
 pub fn run(args: &Cli) -> Result<(), Box<dyn Error>> {
+    let handle = buffered_stdout();
 
-    let content = read_file(&args)?;
+    let _ = read_file(&args, handle)?;
 
 
     Ok(())
 }
 
-fn read_file(args: &Cli) -> Result<(), Box<dyn Error>> {
-    let mut handle = buffer_stdout();
+fn read_file(args: &Cli, mut writer: impl std::io::Write) -> Result<(), Box<dyn Error>> {
 
     let file = File::open(&args.path)?;
     let mut reader = BufReader::new(file);
@@ -26,10 +26,13 @@ fn read_file(args: &Cli) -> Result<(), Box<dyn Error>> {
     let mut content = String::new();
 
     while reader.read_line(&mut content)
-                .with_context(|| format!("could not read file `{}`", &args.path.to_string_lossy()))
+                .with_context(|| format!("could not read file: `{}`", &args.path.to_string_lossy()))
                 .unwrap() > 0 
     {
-        writeln!(handle, "{}", content.trim());
+        writeln!(writer, "{}", content.trim()).unwrap_or_else(|err| {
+            eprintln!("Couldn't write to the terminal, {}", err);
+            process::exit(1);
+        });
         content.clear();
         
     }
@@ -37,9 +40,9 @@ fn read_file(args: &Cli) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn buffer_stdout() -> BufWriter<Stdout> {
+fn buffered_stdout() -> BufWriter<Stdout> {
     let stdout = io::stdout();
-    let mut handle = io::BufWriter::new(stdout);
+    let handle = io::BufWriter::new(stdout);
 
     handle
 }
